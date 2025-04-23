@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Club Baseball</title>
+    <style>
+        #game-container {
+            width: 800px;
+            height: 600px;
+            background-image: url('baseball-field.png');
+            position: relative;
+            margin: 0 auto;
+        }
+        .player {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background-color: blue;
+            border-radius: 50%;
+        }
+        #chat {
+            margin: 20px auto;
+            width: 800px;
+        }
+    </style>
+</head>
+<body>
+    <div id="login-container">
+        <h2>Club Baseball</h2>
+        <input id="username" placeholder="Username">
+        <input id="password" type="password" placeholder="Password">
+        <button id="login-btn">Login</button>
+        <button id="register-btn">Register</button>
+        <div id="message"></div>
+    </div>
+
+    <div id="game-container" style="display:none;">
+        <div id="players"></div>
+    </div>
+
+    <div id="chat" style="display:none;">
+        <div id="messages"></div>
+        <input id="message-input" placeholder="Type a message...">
+        <button id="send-btn">Send</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let currentPlayer;
+
+        // Login/Registration
+        document.getElementById('login-btn').addEventListener('click', async () => {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            
+            const data = await response.json();
+            if (response.ok) {
+                startGame(username);
+            } else {
+                document.getElementById('message').textContent = data.error;
+            }
+        });
+
+        document.getElementById('register-btn').addEventListener('click', async () => {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            const response = await fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            
+            const data = await response.json();
+            document.getElementById('message').textContent = data.message || data.error;
+        });
+
+        // Game Functions
+        function startGame(username) {
+            document.getElementById('login-container').style.display = 'none';
+            document.getElementById('game-container').style.display = 'block';
+            document.getElementById('chat').style.display = 'block';
+            
+            socket.emit('join', username);
+            
+            // Create player avatar
+            currentPlayer = document.createElement('div');
+            currentPlayer.className = 'player';
+            currentPlayer.id = username;
+            currentPlayer.style.left = '400px';
+            currentPlayer.style.top = '300px';
+            document.getElementById('players').appendChild(currentPlayer);
+            
+            // Movement
+            document.addEventListener('keydown', (e) => {
+                const pos = currentPlayer.getBoundingClientRect();
+                const gameContainer = document.getElementById('game-container').getBoundingClientRect();
+                
+                let x = pos.left - gameContainer.left;
+                let y = pos.top - gameContainer.top;
+                
+                switch(e.key) {
+                    case 'ArrowUp': y = Math.max(0, y - 10); break;
+                    case 'ArrowDown': y = Math.min(550, y + 10); break;
+                    case 'ArrowLeft': x = Math.max(0, x - 10); break;
+                    case 'ArrowRight': x = Math.min(750, x + 10); break;
+                }
+                
+                currentPlayer.style.left = `${x}px`;
+                currentPlayer.style.top = `${y}px`;
+                socket.emit('position-update', { x, y });
+            });
+            
+            // Chat
+            document.getElementById('send-btn').addEventListener('click', () => {
+                const msg = document.getElementById('message-input').value;
+                socket.emit('chat-message', msg);
+                document.getElementById('message-input').value = '';
+            });
+        }
+
+        // Socket Events
+        socket.on('user-joined', (username) => {
+            const player = document.createElement('div');
+            player.className = 'player';
+            player.id = username;
+            player.style.left = '200px';
+            player.style.top = '200px';
+            document.getElementById('players').appendChild(player);
+        });
+
+        socket.on('user-left', (username) => {
+            const player = document.getElementById(username);
+            if (player) player.remove();
+        });
+
+        socket.on('player-moved', ({ username, x, y }) => {
+            const player = document.getElementById(username);
+            if (player) {
+                player.style.left = `${x}px`;
+                player.style.top = `${y}px`;
+            }
+        });
+
+        socket.on('chat-message', ({ username, message }) => {
+            const msgElement = document.createElement('div');
+            msgElement.textContent = `${username}: ${message}`;
+            document.getElementById('messages').appendChild(msgElement);
+        });
+
+        socket.on('username-taken', () => {
+            alert('Username already in use!');
+            location.reload();
+        });
+    </script>
+</body>
+</html>
